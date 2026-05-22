@@ -13,36 +13,14 @@
 
   <div id="ui-overlay">
     <h1>Programmable Matter Simulator</h1>
-    <p>Select multiple channels to observe simultaneous multi-agent expansion and contraction.</p>
+    <p>Click on the top of the cavity entrance to place a funnel. Once placed, start the auto-fill to watch the particles push each other and solidify into walls.</p>
     <hr class="divider">
     <p>Active Agents: <span id="agent-count" class="stat">0</span></p>
-    <p>Total Pushes: <span id="sim-step" class="stat">0</span></p>
+    <p>Solidified Walls: <span id="sim-step" class="stat">0</span></p>
 
     <div id="controls">
-      <label class="channel-row">
-        <input type="checkbox" id="chk-0" checked>
-        <span class="color-box" style="background:#ef4444"></span> Line 1 (Red)
-      </label>
-      <label class="channel-row">
-        <input type="checkbox" id="chk-1" checked>
-        <span class="color-box" style="background:#3b82f6"></span> Line 2 (Blue)
-      </label>
-      <label class="channel-row">
-        <input type="checkbox" id="chk-2">
-        <span class="color-box" style="background:#10b981"></span> Line 3 (Green)
-      </label>
-      <label class="channel-row">
-        <input type="checkbox" id="chk-3">
-        <span class="color-box" style="background:#f59e0b"></span> Line 4 (Orange)
-      </label>
-      <label class="channel-row">
-        <input type="checkbox" id="chk-4">
-        <span class="color-box" style="background:#8b5cf6"></span> Line 5 (Purple)
-      </label>
-
       <div class="btn-group">
-        <button class="btn" id="btn-execute" type="button">Push Selected</button>
-        <button class="btn" id="btn-all" type="button">Push All 5</button>
+        <button class="btn" id="btn-autofill" type="button" disabled>Start Auto-Fill</button>
       </div>
     </div>
   </div>

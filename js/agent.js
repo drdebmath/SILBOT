@@ -1,15 +1,16 @@
 (function (SILBOT) {
-  const { CHANNEL_COLORS, AGENT_SPEED } = SILBOT.Config;
+  const { AGENT_SPEED, COLORS } = SILBOT.Config;
   const { gridToWorld, key, easeInOutCubic } = SILBOT.Lattice;
 
   const State = Object.freeze({
     CONTRACTED: 'CONTRACTED',
     EXPANDING: 'EXPANDING',
     CONTRACTING: 'CONTRACTING',
+    SOLIDIFIED: 'SOLIDIFIED' // New state for when it becomes a wall
   });
 
   class Agent {
-    constructor({ x, y, z, channelIndex, sphereGeo, scene, occupancyMap }) {
+    constructor({ x, y, z, color, sphereGeo, scene, simulator }) {
       this.x = x;
       this.y = y;
       this.z = z;
@@ -18,11 +19,11 @@
       this.targetZ = z;
       this.state = State.CONTRACTED;
       this.progress = 0;
-      this.occupancyMap = occupancyMap;
+      this.simulator = simulator;
       this.scene = scene;
 
       this.material = new THREE.MeshStandardMaterial({
-        color: CHANNEL_COLORS[channelIndex],
+        color: color,
         roughness: 0.2,
         metalness: 0.3,
       });
@@ -38,6 +39,7 @@
     }
 
     beginExpansion(targetX, targetY, targetZ) {
+      if (this.state === State.SOLIDIFIED) return;
       this.state = State.EXPANDING;
       this.targetX = targetX;
       this.targetY = targetY;
@@ -45,26 +47,56 @@
       this.progress = 0;
     }
 
+    solidify() {
+      this.state = State.SOLIDIFIED;
+      this.material.color.setHex(COLORS.wall);
+      this.material.roughness = 0.9;
+      this.material.metalness = 0.1;
+      this.mesh.scale.set(1, 1, 1);
+      this.group.position.copy(gridToWorld(this.x, this.y, this.z));
+    }
+
     update(deltaTime) {
+      if (this.state === State.SOLIDIFIED) return;
       this.advancePhase(deltaTime);
       this.renderPose();
     }
 
     advancePhase(deltaTime) {
       if (this.state === State.CONTRACTED) return;
+
       this.progress += deltaTime * AGENT_SPEED;
       if (this.progress < 1.0) return;
 
       this.progress = 0;
+      
       if (this.state === State.EXPANDING) {
+        // Wave Push: We reached the target node. If someone is there, push them!
+        const occupant = this.simulator.occupancyMap.get(key(this.targetX, this.targetY, this.targetZ));
+        if (occupant && occupant !== this && occupant.state !== State.SOLIDIFIED) {
+            this.simulator.triggerPush(occupant);
+        }
+
         this.state = State.CONTRACTING;
-        this.occupancyMap.delete(key(this.x, this.y, this.z));
+        
+        // Update occupancy map safely
+        const oldKey = key(this.x, this.y, this.z);
+        if (this.simulator.occupancyMap.get(oldKey) === this) {
+          this.simulator.occupancyMap.delete(oldKey);
+        }
+        
         this.x = this.targetX;
         this.y = this.targetY;
         this.z = this.targetZ;
-        this.occupancyMap.set(key(this.x, this.y, this.z), this);
-      } else {
+        this.simulator.occupancyMap.set(key(this.x, this.y, this.z), this);
+
+      } else if (this.state === State.CONTRACTING) {
         this.state = State.CONTRACTED;
+        
+        // After fully contracting, check if we've hit a dead end (wall)
+        if (!this.simulator.canMoveFurther(this.x, this.y, this.z)) {
+            this.simulator.makeSolid(this);
+        }
       }
     }
 
@@ -88,15 +120,11 @@
     stretch(start, end, lerpT, stretchT, distance) {
       const pos = new THREE.Vector3().lerpVectors(start, end, lerpT);
       this.group.position.copy(pos);
-      this.group.lookAt(end);
+      // Avoid lookAt error if start and end are identical
+      if (distance > 0.01) this.group.lookAt(end);
       const stretchZ = 1 + distance * stretchT;
       const squeezeXY = 1 - stretchT * 0.15;
       this.mesh.scale.set(squeezeXY, squeezeXY, stretchZ);
-    }
-
-    dispose() {
-      this.scene.remove(this.group);
-      this.material.dispose();
     }
   }
 

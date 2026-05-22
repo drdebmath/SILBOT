@@ -1,34 +1,44 @@
 (function (SILBOT) {
-  const { CHANNEL_COUNT } = SILBOT.Config;
+  function setup(simulator, camera, stats) {
+    const btnAutoFill = document.getElementById('btn-autofill');
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let isAutoFilling = false;
 
-  function setup(simulator, stats) {
-    const checkboxes = Array.from({ length: CHANNEL_COUNT }, (_, i) =>
-      document.getElementById(`chk-${i}`),
-    );
-    const btnExecute = document.getElementById('btn-execute');
-    const btnAll = document.getElementById('btn-all');
+    // Handle clicking on the canvas to place a funnel
+    window.addEventListener('pointerdown', (event) => {
+      if (isAutoFilling || event.target.tagName !== 'CANVAS') return;
 
-    function pushSelected() {
-      const indices = checkboxes.flatMap((cb, i) => (cb.checked ? [i] : []));
-      if (!simulator.pushChannels(indices)) return;
-      stats.stepEl.innerText = simulator.stepCounter;
-      stats.countEl.innerText = simulator.agents.length;
-    }
+      // Calculate mouse position in normalized device coordinates
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-    function pushAll() {
-      checkboxes.forEach((cb) => {
-        cb.checked = true;
-      });
-      pushSelected();
-    }
+      raycaster.setFromCamera(mouse, camera);
+      
+      // Check intersections with the structure mesh
+      const intersects = raycaster.intersectObject(simulator.structureMesh);
+      if (intersects.length > 0) {
+        // Get instance ID to find the approximate location
+        const instanceId = intersects[0].instanceId;
+        if (instanceId !== undefined) {
+          const point = intersects[0].point;
+          simulator.placeFunnel(point);
+          btnAutoFill.disabled = false;
+          btnAutoFill.style.backgroundColor = "#10b981"; // Green when ready
+        }
+      }
+    });
 
-    btnExecute.addEventListener('click', pushSelected);
-    btnAll.addEventListener('click', pushAll);
+    btnAutoFill.addEventListener('click', () => {
+      isAutoFilling = !isAutoFilling;
+      simulator.toggleAutoFill(isAutoFilling);
+      btnAutoFill.innerText = isAutoFilling ? "Stop Auto-Fill" : "Start Auto-Fill";
+      btnAutoFill.style.backgroundColor = isAutoFilling ? "#ef4444" : "#10b981";
+    });
 
     function refresh() {
-      const moving = !simulator.isIdle();
-      btnExecute.disabled = moving;
-      btnAll.disabled = moving;
+      stats.stepEl.innerText = simulator.solidifiedCount;
+      stats.countEl.innerText = simulator.agents.length;
     }
 
     return { refresh };
