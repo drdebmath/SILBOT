@@ -10,10 +10,8 @@
         for (let x = 0; x < BLOCK.width; x++) {
           if (cavityMap.has(key(x, y, z))) continue;
           const dx = Math.abs(x - profile.centerX);
-          // Open top: skip filler directly above the cavity center.
           if (y > profile.centerY && dx < profile.radius + 0.5) continue;
-          const isCutEdge =
-            y > profile.centerY && dx >= profile.radius + 0.5 && dx <= profile.radius + 1.5;
+          const isCutEdge = y > profile.centerY && dx >= profile.radius + 0.5 && dx <= profile.radius + 1.5;
           nodes.push({ x, y, z, isCutEdge });
         }
       }
@@ -42,19 +40,18 @@
 
   function buildStructure(scene, cavityMap, sphereGeo) {
     const nodes = collectSolidNodes(cavityMap);
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.9,
-      metalness: 0.1,
-    });
+    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0.1 });
     const mesh = new THREE.InstancedMesh(sphereGeo, material, nodes.length);
     const dummy = new THREE.Object3D();
+    
     nodes.forEach((node, i) => {
       dummy.position.copy(gridToWorld(node.x, node.y, node.z));
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
       mesh.setColorAt(i, colorFor(node, cavityMap));
     });
+
+    mesh.userData.nodes = nodes; // Required for Raycaster mapping
     scene.add(mesh);
     return mesh;
   }

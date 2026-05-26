@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SILBOT — 3D Programmable Matter Transport Simulator</title>
+  <title>SILBOT — Programmable Matter Simulator</title>
   <link rel="stylesheet" href="css/styles.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -11,17 +11,28 @@
 <body>
   <div id="canvas-container"></div>
 
-  <div id="ui-overlay">
+  <div id="ui-overlay" class="side-panel">
     <h1>Programmable Matter Simulator</h1>
-    <p>Click on the top of the cavity entrance to place a funnel. Once placed, start the auto-fill to watch the particles push each other and solidify into walls.</p>
+    <p>Click on the top of the structure (purple nodes) to place a funnel.</p>
     <hr class="divider">
-    <p>Active Agents: <span id="agent-count" class="stat">0</span></p>
-    <p>Solidified Walls: <span id="sim-step" class="stat">0</span></p>
+    
+    <div class="stats-container">
+        <p>Active Agents: <span id="agent-count" class="stat">0</span></p>
+        <p>Solidified Walls: <span id="sim-step" class="stat">0</span></p>
+    </div>
 
     <div id="controls">
       <div class="btn-group">
         <button class="btn" id="btn-autofill" type="button" disabled>Start Auto-Fill</button>
       </div>
+    </div>
+
+    <hr class="divider">
+    
+    <div id="event-log-wrapper">
+      <h2>Event Log</h2>
+      <div id="event-log">
+        </div>
     </div>
   </div>
 

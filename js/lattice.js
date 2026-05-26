@@ -30,11 +30,13 @@
   }
 
   function isCavity(x, y, z) {
-    if (x <= 1 || x >= BLOCK.width - 2 || y <= 1 || y >= BLOCK.height - 2) return false;
+    if (x <= 1 || x >= BLOCK.width - 2 || y <= 1) return false; 
     const { centerX, centerY, radius } = cavityProfile(z);
-    const dx = x - centerX;
+    const dx = Math.abs(x - centerX);
     const dy = y - centerY;
-    return Math.sqrt(dx * dx + dy * dy) < radius;
+    const inSphere = Math.sqrt(dx * dx + dy * dy) < radius;
+    const inShaft = y > centerY && dx < radius + 0.5 && y < BLOCK.height;
+    return inSphere || inShaft;
   }
 
   function buildCavityMap() {
@@ -53,20 +55,5 @@
     return { cavityMap, entryNodes };
   }
 
-  function pickActiveChannels(entryNodes, count) {
-    if (entryNodes.length < count) return entryNodes.slice();
-    const mid = Math.floor(entryNodes.length / 2);
-    const half = Math.floor(count / 2);
-    return entryNodes.slice(mid - half, mid - half + count);
-  }
-
-  SILBOT.Lattice = {
-    gridToWorld,
-    key,
-    easeInOutCubic,
-    cavityProfile,
-    isCavity,
-    buildCavityMap,
-    pickActiveChannels,
-  };
+  SILBOT.Lattice = { gridToWorld, key, easeInOutCubic, cavityProfile, isCavity, buildCavityMap };
 })(window.SILBOT);
