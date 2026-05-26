@@ -7,15 +7,11 @@
     const container = document.getElementById('canvas-container');
     const { scene, camera, renderer, controls } = createScene(container);
 
-    const { cavityMap, entryNodes } = buildCavityMap();
-
-    // Pass entryNodes to simulator for funnel placement
-    const simulator = new SILBOT.Simulator({ scene, cavityMap, entryNodes });
+    const { cavityMap } = buildCavityMap();
+    const simulator = new SILBOT.Simulator({ scene, cavityMap });
     
-    // Store reference to structure mesh for Raycasting
     simulator.structureMesh = buildStructure(scene, cavityMap, simulator.sphereGeo);
 
-    // Pass camera to UI for Raycasting
     const ui = SILBOT.UI.setup(simulator, camera, {
       stepEl: document.getElementById('sim-step'),
       countEl: document.getElementById('agent-count'),

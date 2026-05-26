@@ -1,30 +1,43 @@
 (function (SILBOT) {
   function setup(simulator, camera, stats) {
     const btnAutoFill = document.getElementById('btn-autofill');
+    const eventLog = document.getElementById('event-log');
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let isAutoFilling = false;
 
-    // Handle clicking on the canvas to place a funnel
+    // The Logger Function
+    function logMessage(message) {
+      const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      div.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+      eventLog.appendChild(div);
+      // Auto-scroll to bottom
+      eventLog.scrollTop = eventLog.scrollHeight;
+    }
+
+    // Attach logger to simulator
+    simulator.setLogger(logMessage);
+    logMessage("System initialized. Awaiting input...");
+
     window.addEventListener('pointerdown', (event) => {
       if (isAutoFilling || event.target.tagName !== 'CANVAS') return;
 
-      // Calculate mouse position in normalized device coordinates
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
       raycaster.setFromCamera(mouse, camera);
       
-      // Check intersections with the structure mesh
       const intersects = raycaster.intersectObject(simulator.structureMesh);
       if (intersects.length > 0) {
-        // Get instance ID to find the approximate location
         const instanceId = intersects[0].instanceId;
         if (instanceId !== undefined) {
-          const point = intersects[0].point;
-          simulator.placeFunnel(point);
-          btnAutoFill.disabled = false;
-          btnAutoFill.style.backgroundColor = "#10b981"; // Green when ready
+          const clickedNode = simulator.structureMesh.userData.nodes[instanceId];
+          if (clickedNode && clickedNode.y >= SILBOT.Config.BLOCK.height - 2) {
+             simulator.placeFunnelAtNode(clickedNode);
+             btnAutoFill.disabled = false;
+             btnAutoFill.style.backgroundColor = "#10b981"; // Green
+          }
         }
       }
     });
@@ -32,8 +45,16 @@
     btnAutoFill.addEventListener('click', () => {
       isAutoFilling = !isAutoFilling;
       simulator.toggleAutoFill(isAutoFilling);
-      btnAutoFill.innerText = isAutoFilling ? "Stop Auto-Fill" : "Start Auto-Fill";
-      btnAutoFill.style.backgroundColor = isAutoFilling ? "#ef4444" : "#10b981";
+      
+      if (isAutoFilling) {
+        logMessage("Auto-fill started. Injecting particles...");
+        btnAutoFill.innerText = "Stop Auto-Fill";
+        btnAutoFill.style.backgroundColor = "#ef4444";
+      } else {
+        logMessage("Auto-fill stopped.");
+        btnAutoFill.innerText = "Start Auto-Fill";
+        btnAutoFill.style.backgroundColor = "#10b981";
+      }
     });
 
     function refresh() {

@@ -1,136 +1,219 @@
 (function (SILBOT) {
-  const { SPHERE_RADIUS, CHANNEL_COLORS } = SILBOT.Config;
+  const { SPHERE_RADIUS, CHANNEL_COLORS, BLOCK } = SILBOT.Config;
   const { key, gridToWorld } = SILBOT.Lattice;
 
-  // Directions a particle prefers to move (downwards into the cavity +z)
-  const FALL_SHIFTS = [[0, 0, 1], [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1]];
-
   class Simulator {
-    constructor({ scene, cavityMap, entryNodes }) {
+    constructor({ scene, cavityMap }) {
       this.scene = scene;
       this.cavityMap = cavityMap;
-      this.entryNodes = entryNodes;
       this.agents = [];
       this.occupancyMap = new Map();
+      this.wallMap = new Set();
       this.funnels = [];
       this.isAutoFilling = false;
       this.spawnTimer = 0;
       this.solidifiedCount = 0;
-      this.structureMesh = null; // Set from main.js
+      this.structureMesh = null;
+      this.logger = () => {}; // Default empty logger
       this.sphereGeo = new THREE.SphereGeometry(SPHERE_RADIUS, 16, 16);
-      
+
       this.funnelGeo = new THREE.ConeGeometry(0.8, 1.5, 16);
-      this.funnelGeo.rotateX(Math.PI); // Point downwards
+      this.funnelGeo.rotateX(Math.PI);
       this.funnelMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
     }
 
-    placeFunnel(worldPoint) {
-      // Find closest entry node to the clicked point
-      let closestNode = null;
-      let minDist = Infinity;
-      
-      this.entryNodes.forEach(node => {
-        const nodeWorld = gridToWorld(node.x, node.y, node.z);
-        const dist = nodeWorld.distanceTo(worldPoint);
-        if (dist < minDist) {
-          minDist = dist;
-          closestNode = node;
-        }
-      });
+    setLogger(loggerFunc) {
+      this.logger = loggerFunc;
+    }
 
-      if (closestNode && !this.funnels.some(f => f.x === closestNode.x && f.y === closestNode.y)) {
-        this.funnels.push(closestNode);
-        
-        // Add visual funnel object
-        const funnelMesh = new THREE.Mesh(this.funnelGeo, this.funnelMat);
-        const funnelPos = gridToWorld(closestNode.x, closestNode.y, closestNode.z);
-        funnelMesh.position.set(funnelPos.x, funnelPos.y + 1, funnelPos.z);
-        this.scene.add(funnelMesh);
-      }
+    placeFunnelAtNode(node) {
+      if (this.funnels.some(f => f.x === node.x && f.z === node.z)) return;
+      this.funnels.push(node);
+      const funnelMesh = new THREE.Mesh(this.funnelGeo, this.funnelMat);
+      const funnelPos = gridToWorld(node.x, node.y, node.z);
+      funnelMesh.position.set(funnelPos.x, funnelPos.y + 1.5, funnelPos.z);
+      this.scene.add(funnelMesh);
+
+      this.logger(`Funnel placed at Grid(${node.x}, ${node.y}, ${node.z})`);
     }
 
     toggleAutoFill(state) {
       this.isAutoFilling = state;
     }
 
-    injectParticle(node) {
-      const spawnKey = key(node.x, node.y, node.z);
-      
-      // If the funnel mouth is blocked, push the blocking particle to make room
-      if (this.occupancyMap.has(spawnKey)) {
-         const blocker = this.occupancyMap.get(spawnKey);
-         if (blocker.isIdle()) {
-            this.triggerPush(blocker);
-         }
-         return; // Wait for it to clear before spawning a new one
-      }
+    isNodeBlocked(nodeKey, movingAgent = null, allowVacatingTarget = false) {
+      if (this.wallMap.has(nodeKey)) return true;
 
-      // Pick a random vibrant color for the new particle
-      const color = CHANNEL_COLORS[Math.floor(Math.random() * CHANNEL_COLORS.length)];
+      const occupant = this.occupancyMap.get(nodeKey);
+      if (!occupant || occupant === movingAgent) return false;
+      const occupantTargetKey = key(occupant.targetX, occupant.targetY, occupant.targetZ);
+      if (allowVacatingTarget && !occupant.isIdle() && occupantTargetKey !== nodeKey) return false;
 
-      const agent = new SILBOT.Agent({
-        x: node.x, y: node.y, z: node.z,
-        color: color,
-        sphereGeo: this.sphereGeo,
-        scene: this.scene,
-        simulator: this
-      });
-      
-      this.occupancyMap.set(spawnKey, agent);
-      this.agents.push(agent);
-      
-      // Immediately tell it to start moving down
-      this.triggerPush(agent);
+      return true;
     }
 
-    triggerPush(agent) {
-      if (!agent.isIdle()) return;
+    createAgentAt(x, y, z) {
+      const agentKey = key(x, y, z);
+      if (this.isNodeBlocked(agentKey)) return null;
 
-      // Find the next viable node deeper into the cavity
-      for (const [dx, dy, dz] of FALL_SHIFTS) {
-        const nx = agent.x + dx;
-        const ny = agent.y + dy;
-        const nz = agent.z + dz;
-        
-        if (this.cavityMap.has(key(nx, ny, nz))) {
-            agent.beginExpansion(nx, ny, nz);
-            return;
+      const color = CHANNEL_COLORS[Math.floor(Math.random() * CHANNEL_COLORS.length)];
+      const agent = new SILBOT.Agent({
+        x, y, z, color,
+        sphereGeo: this.sphereGeo, scene: this.scene, simulator: this
+      });
+      this.occupancyMap.set(agentKey, agent);
+      this.agents.push(agent);
+      return agent;
+    }
+
+    injectParticle(funnelNode) {
+      const spawnY = funnelNode.y + 1;
+      const spawnKey = key(funnelNode.x, spawnY, funnelNode.z);
+      if (this.wallMap.has(spawnKey)) return;
+
+      const blockingAgent = this.occupancyMap.get(spawnKey);
+      if (!blockingAgent) {
+        this.createAgentAt(funnelNode.x, spawnY, funnelNode.z);
+        return;
+      }
+
+      const feedY = spawnY + 1;
+      if (this.isNodeBlocked(key(funnelNode.x, feedY, funnelNode.z))) return;
+      if (!this.triggerPush(blockingAgent)) return;
+
+      const agent = this.createAgentAt(funnelNode.x, feedY, funnelNode.z);
+      if (!agent) return;
+      agent.beginExpansion(funnelNode.x, spawnY, funnelNode.z, false, true);
+    }
+
+    triggerPush(agent, visited = new Set()) {
+      if (!agent || !agent.isIdle()) return false;
+
+      const agentKey = key(agent.x, agent.y, agent.z);
+      if (visited.has(agentKey)) return false;
+      visited.add(agentKey);
+
+      const target = this.findMoveTarget(agent);
+      if (!target) {
+        if (!this.canMoveFurther(agent)) {
+          this.makeSolid(agent);
+        }
+        return false;
+      }
+
+      const targetKey = key(target.x, target.y, target.z);
+      if (this.wallMap.has(targetKey)) return false;
+
+      const blockingAgent = this.occupancyMap.get(targetKey);
+      if (blockingAgent && blockingAgent !== agent) {
+        this.triggerPush(blockingAgent, visited);
+        if (this.occupancyMap.has(targetKey)) return false;
+      }
+
+      return agent.beginExpansion(target.x, target.y, target.z, target.isFalling);
+    }
+
+    findMoveTarget(agent) {
+      const straightDownKey = key(agent.x, agent.y - 1, agent.z);
+      if (this.cavityMap.has(straightDownKey)) {
+          return { x: agent.x, y: agent.y - 1, z: agent.z, isFalling: true };
+      }
+
+      const DIAG_FALLS = [[0, -1, 1], [0, -1, -1], [1, -1, 0], [-1, -1, 0]];
+      for (const [dx, dy, dz] of DIAG_FALLS) {
+        const targetKey = key(agent.x + dx, agent.y + dy, agent.z + dz);
+        if (this.cavityMap.has(targetKey)) {
+            return { x: agent.x + dx, y: agent.y + dy, z: agent.z + dz, isFalling: true };
         }
       }
+
+      if (agent.y >= BLOCK.height - 2) {
+         const trenchX = Math.floor(BLOCK.width / 2);
+         if (Math.abs(agent.x - trenchX) > 0.5) {
+             const dirX = Math.sign(trenchX - agent.x);
+             const targetKey = key(agent.x + dirX, agent.y, agent.z);
+             if (!this.wallMap.has(targetKey)) {
+                 return { x: agent.x + dirX, y: agent.y, z: agent.z, isFalling: false };
+             }
+         } else {
+             const targetKey = key(agent.x, agent.y, agent.z + 1);
+             if (agent.z + 1 < BLOCK.depth && !this.wallMap.has(targetKey)) {
+                 return { x: agent.x, y: agent.y, z: agent.z + 1, isFalling: false };
+             }
+         }
+         return null;
+      }
+
+      let isMidAir = false;
+      if (this.cavityMap.has(straightDownKey)) isMidAir = true;
+      for (const [dx, dy, dz] of DIAG_FALLS) {
+         if (this.cavityMap.has(key(agent.x + dx, agent.y + dy, agent.z + dz))) isMidAir = true;
+      }
+      if (isMidAir) return null;
+
+      const HORIZ_MOVES = [
+          [0, 0, agent.prefDirZ], [0, 0, -agent.prefDirZ],
+          [agent.prefDirX, 0, 0], [-agent.prefDirX, 0, 0]
+      ];
+      for (const [dx, dy, dz] of HORIZ_MOVES) {
+        const targetKey = key(agent.x + dx, agent.y + dy, agent.z + dz);
+        if (targetKey !== agent.lastKey && this.cavityMap.has(targetKey)) {
+            return { x: agent.x + dx, y: agent.y + dy, z: agent.z + dz, isFalling: false };
+        }
+      }
+
+      return null;
     }
 
-    canMoveFurther(x, y, z) {
-      // Check if there are any available cavity nodes deeper down
-      for (const [dx, dy, dz] of FALL_SHIFTS) {
-        if (this.cavityMap.has(key(x + dx, y + dy, z + dz))) return true;
+    canMoveFurther(agent) {
+      if (agent.y >= BLOCK.height - 2) return true;
+
+      const DOWN_MOVES = [[0, -1, 0], [0, -1, 1], [0, -1, -1], [1, -1, 0], [-1, -1, 0]];
+      const HORIZ_MOVES = [[0, 0, 1], [0, 0, -1], [1, 0, 0], [-1, 0, 0]];
+
+      for (const [dx, dy, dz] of DOWN_MOVES) {
+         if (this.cavityMap.has(key(agent.x + dx, agent.y + dy, agent.z + dz))) return true;
+      }
+
+      for (const [dx, dy, dz] of HORIZ_MOVES) {
+          const targetKey = key(agent.x + dx, agent.y + dy, agent.z + dz);
+          if (targetKey !== agent.lastKey && this.cavityMap.has(targetKey)) return true;
       }
       return false;
     }
 
     makeSolid(agent) {
       agent.solidify();
-      
-      // Remove from cavity map so it acts as a wall boundary for others
       const agentKey = key(agent.x, agent.y, agent.z);
       this.cavityMap.delete(agentKey);
-      this.occupancyMap.delete(agentKey);
-      
-      // Remove from active update loop
+      this.wallMap.add(agentKey);
+      for (const [nodeKey, occupant] of this.occupancyMap) {
+        if (occupant === agent) this.occupancyMap.delete(nodeKey);
+      }
       this.agents = this.agents.filter(a => a !== agent);
       this.solidifiedCount++;
+
+      // Log milestone to avoid spamming the log every single time
+      if (this.solidifiedCount % 10 === 0) {
+          this.logger(`Milestone: ${this.solidifiedCount} particles solidified.`);
+      }
     }
 
     update(deltaTime) {
-      // Auto-fill logic: Spawn a particle every 0.8 seconds per funnel
       if (this.isAutoFilling && this.funnels.length > 0) {
         this.spawnTimer += deltaTime;
-        if (this.spawnTimer >= 0.8) {
+        if (this.spawnTimer >= 0.3) {
           this.spawnTimer = 0;
           this.funnels.forEach(f => this.injectParticle(f));
         }
       }
 
-      this.agents.forEach((a) => a.update(deltaTime));
+      [...this.agents].forEach((a) => {
+         a.update(deltaTime);
+         if (a.isIdle() && !this.canMoveFurther(a)) {
+             this.makeSolid(a);
+         }
+      });
     }
   }
 
